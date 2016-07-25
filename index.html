@@ -387,21 +387,12 @@ confusionMatrix(yhat,testing.sub$classe)</code></pre>
 </div>
 <div id="predictions-on-validation-set" class="section level3">
 <h3>Predictions on validation set</h3>
-<pre class="r"><code>pml_write_files = function(x){
-    n = length(x)
-    for(i in 1:n){
-        filename = paste0(&quot;problem_id_&quot;,i,&quot;.txt&quot;)
-        write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
-    }
-}
-# predictions on validation set
+<pre class="r"><code># predictions on validation set
 yhatValidation &lt;- predict(fit,validation)
 # display answers
 as.character(yhatValidation)</code></pre>
 <pre><code>##  [1] &quot;B&quot; &quot;A&quot; &quot;B&quot; &quot;A&quot; &quot;A&quot; &quot;E&quot; &quot;D&quot; &quot;B&quot; &quot;A&quot; &quot;A&quot; &quot;B&quot; &quot;C&quot; &quot;B&quot; &quot;A&quot; &quot;E&quot; &quot;E&quot; &quot;A&quot;
 ## [18] &quot;B&quot; &quot;B&quot; &quot;B&quot;</code></pre>
-<pre class="r"><code># write files
-pml_write_files(yhatValidation)</code></pre>
 </div>
 <div id="conclussion" class="section level3">
 <h3>Conclussion</h3>
