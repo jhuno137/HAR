@@ -291,6 +291,7 @@ dim(training)</code></pre>
 <div id="model-building" class="section level3">
 <h3>Model Building</h3>
 <p>We are going to build a classifier using <a href="https://en.wikipedia.org/wiki/Random_forest">random forest</a> which is one of the high performance algorithms used in classification problems and can be used to rank the importance of variables. Random forest have high accuracy but it is computationally intensive.</p>
+<p>We will use 10-fold cross validation and three repeats (default) in order to reduce overfiting on the training set. The number of trees (ntree) is set to 1000 instead the default of 500.</p>
 <pre class="r"><code>set.seed(12345)
 inTrain &lt;- createDataPartition(y=training$classe,p=0.6,list=FALSE)
 training.sub &lt;- training[inTrain,] # model building training set 

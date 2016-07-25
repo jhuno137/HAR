@@ -145,7 +145,11 @@ We are going to build a classifier using
 [random forest](https://en.wikipedia.org/wiki/Random_forest) which is one of
 the high performance algorithms used in classification problems and can be 
 used to rank the importance of variables. Random forest have high accuracy but
-it is computationally intensive.
+it is computationally intensive. 
+  
+We will use 10-fold cross validation and three 
+repeats (default) in order to reduce overfiting on the training set. The number 
+of trees (ntree) is set to 1000 instead the default of 500.
 
 ```{r model,echo=TRUE,cache=TRUE,message=FALSE}
 set.seed(12345)
