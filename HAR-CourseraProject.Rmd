@@ -1,0 +1,258 @@
+---
+title: "Human Activity Recognition - Weight Lifting Classification"
+author: "Antonio camacho"
+date: "July 24, 2016"
+output: html_document
+---
+
+## Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible 
+to collect a large amount of data about personal activity relatively 
+inexpensively. These type of devices are part of the quantified self movement 
+- a group of enthusiasts who take measurements about themselves regularly to 
+improve their health, to find patterns in their behavior, or because they are 
+tech geeks. One thing that people regularly do is quantify how much of a 
+particular activity they do, but they rarely quantify how well they do it. 
+In this project, your goal will be to use data from accelerometers on the belt, 
+forearm, arm, and dumbell of 6 participants. They were asked to perform barbell 
+lifts correctly and incorrectly in 5 different ways. More information is 
+available from the website here: [dataset website](http://groupware.les.inf.puc-rio.br/har) 
+(see the section on the Weight Lifting Exercise Dataset).
+  
+Participants were asked to perform one set of 10 repetitions of the Unilateral 
+Dumbbell Biceps Curl in five different fashions: exactly according to the 
+specification (Class A), throwing the elbows to the front (Class B), lifting 
+the dumbbell only halfway (Class C), lowering the dumbbell only halfway
+(Class D) and throwing the hips to the front (Class E).
+
+## Executive Summary  
+
+After exploring data and looking for NAs, near zero variance predictors,
+and highly correlated predictors, 114 of this predictors where removed from
+model building. Random forest has been used as a high accuracy classifier in
+order to calculate out of sample accuracy and classify barbell lifts on the
+test / validation data set. The final model has an accuracy of 99.25% in the
+test data set.
+
+## Analysis
+
+```{r libs,echo=TRUE,message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(parallel)
+library(doParallel)
+```
+
+### Downloading and loading the data  
+
+```{r loading, message=FALSE,cache=TRUE}
+if(!file.exists("~/rdir/data/pml-training.csv")){
+    url1<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+    download.file(url=url1,destfile="~/rdir/data/pml-training.csv",extra = c("curl"))
+}
+if(!file.exists("~/rdir/data/pml-testing.csv")){
+    url2<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+    download.file(url=url2,destfile="~/rdir/data/pml-testing.csv",extra = c("curl"))
+}
+training<-read.csv(file ="~/rdir/data/pml-training.csv",na.strings = c("NA","#DIV/0!"))
+validation<-read.csv(file="~/rdir/data/pml-testing.csv",na.strings = c("NA","#DIV/0!"))
+```
+
+
+### Exploratory Data Analysis
+
+We will proceed to do some exploratory data analysis in order to obtain
+some intuition about the the data. We will look for NAs, predictors with
+near zero variance and highly correlated predictors. We will also take a look
+at the counts of classes in the training data set.
+
+```{r eda,echo=TRUE}
+# How big is the data?
+dim(training); 
+
+dim(validation)
+
+# Histogram of classes
+table(training$classe)
+
+# Inspect for NA values and count how many there are in
+# each column
+na <- apply(training,2, function(x) sum(is.na(x)) )
+
+# columns counts of NA values
+na[na > 0]
+
+# Near Zero Variance Predictors
+nzv <- nearZeroVar(training, saveMetrics= TRUE)
+# number of predictors with near zero variance
+nzv %>% filter(nzv == TRUE) %>% nrow()
+
+# Find out about highly correlated (numeric) predictors
+# of columns without NA values
+
+training.complete <- 
+    training %>% 
+    select(which(colSums(is.na(.))==0)) # remove cols with NAs
+
+# correlation matrix of numeric predictors
+numericColumns <- sapply(training.complete, is.numeric)
+corMatrix<-cor(training.complete[,numericColumns])
+# find highly correlated columns to later remove
+highCor <- findCorrelation(corMatrix,cutoff = .90)
+highCorColumns <- dimnames(corMatrix)[[1]][highCor]
+
+unlink(training.complete) # no more need of this variable
+```
+  
+### Data pre-processing  
+  
+In this section we will proceed to remove:  
+
+- columns filled with NA values (as we saw most of the values are missing for 
+these predictors)
+- predictors with near zero variance
+- high correlated predictors
+- predictors with low predictive value (column ids and time stamps)
+
+
+```{r preproc, echo=TRUE}
+# remove near zero variance predictors
+training <- training[,nzv$nzv == FALSE]
+# remove columns filled with NAs
+training <- training %>% select(which(colSums(is.na(.))==0))
+# romove highly correlated predictors
+training <- training %>% select(-which(names(.) %in% highCorColumns))
+
+#remove unecesary predictors unrelated to sensor data
+training$X <- NULL                      
+training$user_name <- NULL                     
+training$raw_timestamp_part_1 <- NULL   
+training$raw_timestamp_part_2 <- NULL  
+training$cvtd_timestamp <- NULL         
+training$num_window <- NULL             
+
+dim(training)
+```
+  
+After removing all these predictors the number of dimensions have been reduced 
+to 46 from an initial value of 160.
+  
+### Model Building
+
+We are going to build a classifier using 
+[random forest](https://en.wikipedia.org/wiki/Random_forest) which is one of
+the high performance algorithms used in classification problems and can be 
+used to rank the importance of variables. Random forest have high accuracy but
+it is computationally intensive.
+
+```{r model,echo=TRUE,cache=TRUE,message=FALSE}
+set.seed(12345)
+inTrain <- createDataPartition(y=training$classe,p=0.6,list=FALSE)
+training.sub <- training[inTrain,] # model building training set 
+testing.sub <- training[-inTrain,] # model building test set
+
+# check if model has already been created (this will only run once!)
+if(!file.exists("~/rdir/data/har_model_rf_fit.rda") ){
+    # Allow for parallel computing
+    cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+    registerDoParallel(cluster)
+    
+    # set seed to generate reproducible results
+    set.seed(12345)
+    trainCtrl <- trainControl(method = "cv", number = 10, allowParallel = TRUE)
+    fit <- train(classe~.,
+                 data = training.sub, 
+                 method = "rf",
+                 prox = TRUE, 
+                 trControl =trainCtrl,
+                 ntree=1000)
+    stopCluster(cluster)
+    
+    # save for later use
+    save(fit,file ="~/rdir/data/har_model_rf_fit.rda")
+}else{
+    # load model from hard drive
+    load("~/rdir/data/har_model_rf_fit.rda")
+}
+
+# Model Summary
+print(fit)
+```
+
+### Cross validation Accuracy and out of sample error
+
+```{r accuracy,echo=TRUE}
+plot(fit)
+```
+  
+**Figure 1** Cross validation out of sample error versus number of randomly
+selected predictors.  
+
+### Out of sample error on test dataset
+
+```{r ooserror, echo=TRUE, message=FALSE}
+# prediction
+yhat <- predict(fit,testing.sub)
+# confussion matrix
+confusionMatrix(yhat,testing.sub$classe)
+```
+
+### Predictions on validation set
+
+```{r validation,echo=TRUE}
+pml_write_files = function(x){
+    n = length(x)
+    for(i in 1:n){
+        filename = paste0("problem_id_",i,".txt")
+        write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+    }
+}
+# predictions on validation set
+yhatValidation <- predict(fit,validation)
+# display answers
+as.character(yhatValidation)
+# write files
+pml_write_files(yhatValidation)
+```
+  
+### Conclussion
+
+Random forest produces a high accuracy classifier (99.25%) on the test data of 
+the weight lifting data set after removing 114 unnecessary predictors. There is a 
+big computational cost on building the model. Parallel computing was used to 
+reduce the time needed to produce the classifier.
+
+## Appendix
+
+### Predictors importance
+
+```{r importance}
+varImp(fit)
+```
+
+### Classe distribution in training set
+```{r classe, echo=TRUE}
+qplot(training$classe,xlab="Classe",ylab="Count",fill=training$classe)
+```
+  
+**Figure 2** *Classe* counts in training data set
+  
+```{r plots3, echo=TRUE}
+# most important variable
+g <- ggplot(training,aes(classe,yaw_belt))
+g <- g + geom_boxplot(aes(fill = classe))
+g
+```
+  
+**Figure 3** *Classe* versus *yaw_belt* (most important variable)
+
+```{r plots4, echo=TRUE}
+# second most important variable
+g <- ggplot(training,aes(classe,pitch_forearm))
+g <- g + geom_boxplot(aes(fill = classe))
+g
+```
+  
+**Figure 4** *Classe* versus *pitch_forearm* (second most important variable)
